@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "serialmanager.h": "c",
+        "string.h": "c"
+    }
+}
