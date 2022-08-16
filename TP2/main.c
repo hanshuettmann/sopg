@@ -22,6 +22,9 @@
 static pthread_t threadSerial;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
+void blockSignal(void);
+void unblockSignal(void);
+
 int newfd;
 
 // Client connection status
@@ -68,6 +71,7 @@ void sigint_handler(int sig)
 int main(void)
 {
 
+	// Set signal handlers
 	// Signal ctrl+c
 	struct sigaction sa1;
 	sa1.sa_handler = sigint_handler;
@@ -99,8 +103,14 @@ int main(void)
 		return 0;
 	}
 
+	// Block signals
+	blockSignal();
+
 	// Create threadSerial
 	pthread_create(&threadSerial, NULL, readSerial, NULL);
+
+	// Unblock signals
+	unblockSignal();
 
 	// Create TCP Server
 	socklen_t addr_len;
@@ -115,7 +125,7 @@ int main(void)
 	serverConnected = true;
 	bool isClientAvailable;
 
-	// Cargamos datos de IP:PORT del server
+	// Load IP data server IP:PORT
 	bzero((char *)&serveraddr, sizeof(serveraddr));
 	serveraddr.sin_family = AF_INET;
 	serveraddr.sin_port = htons(10000);
@@ -126,7 +136,7 @@ int main(void)
 		return 1;
 	}
 
-	// Abrimos puerto con bind()
+	// Open port with bind()
 	if (bind(s, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) == -1)
 	{
 		close(s);
@@ -134,7 +144,7 @@ int main(void)
 		return 1;
 	}
 
-	// Seteamos socket en modo Listening
+	// Socket in Listening mode
 	if (listen(s, 10) == -1) // backlog=10
 	{
 		perror("Error in listen function");
@@ -143,12 +153,13 @@ int main(void)
 
 	while (serverConnected)
 	{
-		// Ejecutamos accept() para recibir conexiones entrantes
+		// Call accept() to receive new connections
 		addr_len = sizeof(struct sockaddr_in);
 		if ((newfd = accept(s, (struct sockaddr *)&clientaddr, &addr_len)) == -1)
 		{
 			perror("Error in accept function");
-			exit(1);
+			serverConnected = false;
+			break;
 		}
 
 		char ipClient[32];
@@ -162,18 +173,14 @@ int main(void)
 
 		while (isClientAvailable && serverConnected)
 		{
-			// Leemos mensaje de cliente
+			// Read message from client
 			// if( (n = recv(newfd,buffer,128,0)) == -1 )
 			if ((n = read(newfd, buffer, 128)) == -1)
 			{
 				perror("Error reading message in socket");
-				n = 0;
 			}
 
-			buffer[n] = 0x00;
-			printf("Received %d bytes.:%s\n", n, buffer);
-
-			if (n == 0)
+			if (n <= 0)
 			{
 				// Update Client connection status
 				pthread_mutex_lock(&mutex);
@@ -183,6 +190,9 @@ int main(void)
 			}
 			else
 			{
+				buffer[n] = 0x00;
+				printf("Received %d bytes.:%s\n", n, buffer);
+
 				// Send message to serial port
 				serial_send(buffer, strlen(buffer));
 			}
@@ -193,16 +203,15 @@ int main(void)
 
 	} // fin while
 
-	void *ret;
-	printf("Closing programm...\n");
-
 	// Close client and socket
+	printf("Closing socket...\n");
 	close(s);
 
 	// Cancel Serial Thread
 	pthread_cancel(threadSerial);
 
 	// Wait thread to be closed
+	void *ret;
 	pthread_join(threadSerial, &ret);
 	if (ret == PTHREAD_CANCELED)
 		printf("Serial Thread Cancelled\n");
@@ -210,7 +219,30 @@ int main(void)
 		printf("Serial Thread Ended\n");
 
 	// Close serial port
+	printf("Closing serial port...\n");
 	serial_close();
 
+	printf("Programm finished\n");
+
 	return 0;
+}
+
+void blockSignal(void)
+{
+	sigset_t set;
+	int s;
+	sigemptyset(&set);
+	sigaddset(&set, SIGINT);
+	sigaddset(&set, SIGTERM);
+	pthread_sigmask(SIG_BLOCK, &set, NULL);
+}
+
+void unblockSignal(void)
+{
+	sigset_t set;
+	int s;
+	sigemptyset(&set);
+	sigaddset(&set, SIGINT);
+	sigaddset(&set, SIGTERM);
+	pthread_sigmask(SIG_UNBLOCK, &set, NULL);
 }
