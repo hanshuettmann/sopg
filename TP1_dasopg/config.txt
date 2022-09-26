@@ -1,0 +1,1 @@
+/home/hanshuettmann/SOPG/appDev/dasopgtp1/TP1_alumnos/data.csv
